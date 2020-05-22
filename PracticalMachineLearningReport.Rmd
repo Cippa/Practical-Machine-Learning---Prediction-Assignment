@@ -1,0 +1,191 @@
+---
+title: "Practical Machine Learning - Final Project"
+author: "Fulvio Barizzone"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+    html_document:
+        toc: yes
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "") 
+```
+
+## Introduction
+A group of people was asked to perform barbell lifts correctly and incorrectly in 
+5 different ways. More information is available at the following website 
+http://groupware.les.inf.puc-rio.br/har (see section on the Weight Lifting 
+Exercise Dataset). The goal of the project is to predict the manner in which they 
+did the exercise using data from accelerometers.
+
+## Libraries used
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+library(readr)
+library(janitor)
+```
+
+## Upload data
+
+```{r data, message=FALSE, warning=FALSE}
+pathTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+pathTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train <- read_csv(pathTrain)
+# removing row number
+train <- train %>% select(-X1)
+
+# removin row number
+test <- read_csv(pathTest)
+test <- test %>% select(-X1)
+```
+
+## Esploratory data analyis and cleaning
+
+```{r}
+dim(train); dim(test)
+```
+The Train dataset has 19622 observations with 159 variables, while the Test 
+dataset has 20 obervations with always 159 variables
+
+```{r}
+namesTrain <- names(train); namesTest <- names(test)
+c(setdiff(namesTrain, namesTest), setdiff(namesTest, namesTrain))
+```
+
+The differences in the 2 datasets consists in the field "classe" in the Train 
+dataset and in the field "problem_id" in the test dataset.  
+The field "classe" is the field we are interested in predicting.
+
+```{r}
+table(train$classe)
+```
+
+According to the Authors of the dataset "classe" A means that the exercise has 
+been performd correcly, while the other categories represent some common mistakes. 
+
+I was not able to find a codebook of the dataset however, when looking at the raw 
+data it semms that the field categorised as "new_window" = "yes" report summary 
+statistics for the execution of a given exercise. I remove these rows.
+
+```{r}
+train <- train %>%
+    filter(new_window == "no")
+test <- test %>%
+    filter(new_window == "no")
+dim(train);dim(test)
+```
+There was none of such cases in the test set since it continues to be of 20 records.
+
+There is a series of empty fields in the datasets that were included to insert the 
+summary statistics. I remove these columns.
+
+```{r}
+train <- remove_empty(dat = train, which = "cols")
+test <- remove_empty(dat = test, which = "cols")
+```
+
+The fields from "raw_time_stamp_part_1" to "num_window" are not important for the 
+predictions. I remove these.
+
+```{r}
+train <- train %>% 
+    select(-c(raw_timestamp_part_1:num_window))
+test <- test %>%
+    select(-c(raw_timestamp_part_1:num_window))
+dim(train);dim(test)
+```
+
+
+## Create Training set, Test set, Validation set
+Considering the given Train dataset contains a significant amount of data I 
+create Training, Testing and Validation datasets on the basis of it to perform a 
+proper cross-validation.  
+```{r training}
+set.seed(12345)
+inBuild <- createDataPartition(y = train$classe, p = 0.7, list = FALSE)
+inBuild <- as.vector(inBuild)
+validation <- train[-inBuild,]
+buildData <- train[inBuild,]
+inTrain <- createDataPartition(y = buildData$classe, p = 0.7, list = FALSE)
+inTrain <- as.vector(inTrain)
+training <- buildData[inTrain,]
+testing <- buildData[-inTrain,]
+```
+
+## Data Preparation
+
+Looking if there are variables with near-zero-variance.
+
+```{r nrz}
+NearZeroVariance <- nearZeroVar(x = select(training, -user_name, -classe), saveMetrics = TRUE) 
+sum(NearZeroVariance$nzv)
+```
+
+There are no variables with near-zero-variance. 
+
+I'm going to fit three models, Random Forest, Boosting and Linear Discriminant 
+Analysis and will compare their performance.
+
+### Random forest
+
+```{r random_forest, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
+set.seed(12345)
+modRand <- caret::train(classe ~., data = training, method = "rf")
+predRad <- predict(object = modRand, newdata = testing)
+```
+
+### Boosting
+
+```{r boosting, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
+set.seed(12345)
+modBoost <- caret::train(classe ~., data = training, method = "gbm")
+predBoost <- predict(object = modBoost, newdata = testing)
+```
+
+### Linear discriminant analysis
+
+```{r lda, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
+set.seed(12345)
+modLDA <- caret::train(classe ~., data = training, method = "lda")
+predLDA <- predict(object = modLDA, newdata = testing)
+```
+
+## Compare models
+
+### Random forest performance
+```{r random_forest_perf}
+confusionMatrix(data = predRad, reference = as.factor(testing$classe))
+```
+
+### Boosting performance
+
+```{r boosting_perf}
+confusionMatrix(data = predBoost, reference = as.factor(testing$classe))
+```
+
+### Linear discriminant analysis performance
+
+```{r lda_perf}
+confusionMatrix(data = predLDA, reference = as.factor(testing$classe))
+```
+
+### Best performing model
+According to the results obtained the best performing model is Random Forest with 
+Sensitivity and Specificity above 0.99 for each class and overall Accuracy about 
+0.99. 
+
+### Expected out of sampling error
+
+I predict the results of the Random Forest model for the validation dataset and 
+then I assess the expected out of sampling error.
+
+```{r out_of_sampling_err}
+predOut <- predict(object = modRand, newdata = validation)
+confusionMatrix(data = predOut, reference = as.factor(validation$classe))
+```
+
+The **expected out of sampling error is about 0.99** with 95% CI 0.9864 - 0.9919)
+
