@@ -187,5 +187,7 @@ predOut <- predict(object = modRand, newdata = validation)
 confusionMatrix(data = predOut, reference = as.factor(validation$classe))
 ```
 
-The **expected out of sampling error is about 0.99** with 95% CI 0.9864 - 0.9919)
+The accuracy of the model on the validation dataset is about 0.99 (with 95% CI 
+0.9862 - 0.9917).  
+Hence, the **expected out of sampling** error is 1-accuracy i.e. **about 0.01**.
 
